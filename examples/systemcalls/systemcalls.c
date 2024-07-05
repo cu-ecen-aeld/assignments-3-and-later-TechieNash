@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <syslog.h>
+#include <errno.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -9,15 +15,15 @@
 */
 bool do_system(const char *cmd)
 {
+	int ret;
+	//Execute command using system()
+	ret = system(cmd);
+	//checking the return value of system()
+	if(ret)
+		return false;
 
-/*
- * TODO  add your code here
- *  Call the system() function with the command set in the cmd
- *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
-*/
+	return true;
 
-    return true;
 }
 
 /**
@@ -45,21 +51,27 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
+	pid_t pid;
+	int status;
+
+	pid = fork(); //create new process using fork()
+	
+	
+	if(pid == 0){ //Child process, execution using execv()
+		if(execv(command[0], command) == -1)
+			exit(EXIT_FAILURE);
+	}else if(pid > 0){ // Parent process
+		wait(&status);
+	}
 
     va_end(args);
+	//check if the child process exited normally
+	if(WIFEXITED(status)){ 
+		if(WEXITSTATUS(status)){
+			return false;
+		}
+	}
 
     return true;
 }
@@ -80,20 +92,37 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+	//open the output file for writing, create if doesnt exist and truncate if it does. 
+	int fd = open(outputfile, O_RDWR|O_CREAT|O_TRUNC);
+	pid_t pid;
+	int status;
 
+	if(fd < 0){
+		return false;
+	}
 
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
+	pid = fork();
+	
+	if(pid == 0){ //Child Process
+		if(dup2(fd, 1) < 0){
+			return false;
+		}
+		close(fd);
+
+		execv(command[0], command);
+		exit(-1);
+	}else if(pid > 0){ // Parent Process
+		wait(&status);
+		close(fd);
+	}
 
     va_end(args);
+
+	if(WIFEXITED(status)){
+		if(WEXITSTATUS(status)){
+			return false;
+		}
+	}
 
     return true;
 }
